@@ -60,6 +60,17 @@ In Claude Code, `/relay-init` walks you through the same setup interactively.
 
 To begin with an Antigravity run you've already written: `relay start --agy 01-settings-page.md`.
 
+## Personal defaults
+
+`~/.relay-loop/defaults.sh` is read before every project's `config.sh`. Use it for settings you want everywhere on your machine, such as your usual Antigravity model:
+
+```sh
+AGY_MODEL=gemini-3.8-flash-high
+WEEK_STOP=75
+```
+
+A project's `config.sh` still wins for anything it sets.
+
 ## Project layout
 
 ```

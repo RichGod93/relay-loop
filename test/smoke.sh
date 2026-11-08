@@ -66,6 +66,10 @@ check "writes starter agy-check rules for the agy repo" 'python3 -m json.tool "$
 check "denies dev server" 'grep -q "Bash(npm run dev:\*)" "$P/.loop/config.sh"'
 check "refuses to start before hazards reviewed" '! "$ENGINE/bin/relay" start "$P" 2>/dev/null'
 
+echo "personal defaults"
+mkdir -p "$RELAY_HOME"; echo 'AGY_MODEL=my-default-model' >"$RELAY_HOME/defaults.sh"
+check "new configs don't pin a model" '! grep -q "^AGY_MODEL=" "$P/.loop/config.sh"'
+
 echo "happy path (branch mode, agy hand-off, runner commits)"
 configure "$P"
 export STUB_STATE="$T/s1" STUB_SCENARIO=happy LOOP_BACKLOG="$P/.loop/BACKLOG.md"; mkdir -p "$STUB_STATE"
@@ -74,6 +78,7 @@ L="$P/.loop/logs/loop.log"; W="$RELAY_HOME/work/proj"; B="$(cat "$P/.loop/state/
 check "prompt has the agy batch rules + quoted check command" 'grep -q "## Antigravity batches" "$T/s1/prompt-1.txt" && grep -q "agy-check.py'"'"' --repo '"'"'web'"'"'" "$T/s1/prompt-1.txt"'
 check "prompt routes repos to the right executor" 'grep -q "\`api\` (api): \*\*you write the code yourself" "$T/s1/prompt-1.txt" && grep -q "\`web\` (web): \*\*UI is written by Antigravity" "$T/s1/prompt-1.txt"'
 check "pass 1 asked for agy" 'grep -q "pass 1 verdict: AGY ui.md" "$L"'
+check "agy used the model from ~/.relay-loop/defaults.sh" 'grep -q "agy (my-default-model)" "$L"'
 check "agy ran in the web worktree" 'grep -q "agy (.*) in $W/web" "$L" && [ -f "$W/web/ui.txt" ]'
 check "agy settings scoped to web worktree + its checks" 'grep -q "write_file($W/web)" "$P/.loop/state/agy-settings.json" && grep -q "command(npm run lint)" "$P/.loop/state/agy-settings.json" && python3 -m json.tool "$P/.loop/state/agy-settings.json" >/dev/null'
 check "runner committed api work on the loop branch" '[ "$(git -C "$W/api" log -1 --format=%s "$B")" = "Add a" ]'

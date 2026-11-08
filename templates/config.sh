@@ -20,7 +20,7 @@ WEEK_STOP=80       # stop when weekly usage reaches this %
 SESSION_STOP=85    # pause 30 min when the 5-hour session reaches this %
 GAP_SECONDS=300
 CLAUDE_EFFORT=medium
-AGY_MODEL=gemini-4-argon-high
+# AGY_MODEL=gemini-3.8-flash-high   # unset = ~/.relay-loop/defaults.sh, else the engine default (gemini-4-argon-high)
 AGY_TIMEOUT=45m
 AGY_MAX_FILES=10   # per Antigravity prompt; smaller batches hold up better, especially on Flash models
 
