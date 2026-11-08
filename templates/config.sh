@@ -22,6 +22,7 @@ GAP_SECONDS=300
 CLAUDE_EFFORT=medium
 AGY_MODEL=gemini-4-argon-high
 AGY_TIMEOUT=45m
+AGY_MAX_FILES=10   # per Antigravity prompt; smaller batches hold up better, especially on Flash models
 
 # Extra tools Claude passes may never use, e.g. "Bash(npm run dev:*)" "Bash(psql:*)"
 EXTRA_DENY=(__DENY__)

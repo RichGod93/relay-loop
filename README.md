@@ -22,6 +22,8 @@ These rules come from running loops like this one on a real two-repo product (Ne
 - **Agents never commit. The runner does.** `git add` means "reviewed and checks pass". In branch mode the runner commits that staged work on a `loop/` branch in a separate worktree. Your checkout and your branches stay untouched until you merge. The loop stops if an agent moves a HEAD.
 - **One writer per repo.** Each repo has an `executor`. `claude` means Claude passes write the code. `agy` means Antigravity writes the UI, and Claude writes its prompts, reviews the output and makes small fixes.
 - **Hazards are declared, not guessed.** `relay init` detects some hazards: remote database URLs in `.env` files (it never prints their values), scheduled jobs and payment libraries. You add the ones it can't know about. The loop won't start until you set `HAZARDS_REVIEWED=yes`. Every pass reads the list.
+- **Mechanical checks before any review.** Antigravity repeats the same mistakes even when the prompt bans them by name. `lib/agy-check.py` compares each file Antigravity changed with its reviewed version, using per-project rules in `.loop/agy-check.json`: text that must not disappear, patterns that must not be added or must not remain, attributes banned on certain tags, lines that need a comment above them, and files changed outside the batch. Every pass must get it to exit 0 before staging, and it adds a rule whenever it catches a mistake for the second time.
+- **Small batches.** One Antigravity prompt covers at most `AGY_MAX_FILES` files (default 10). Long tasks are where models start dropping constraints, Flash models especially.
 - **Safe failure over silent success.** Headless Antigravity runs on an allow-list of commands. Anything unlisted aborts the run. If an agy run changes nothing, the loop stops and logs the command it tried, so you can allow it. A missing structured verdict also stops the loop.
 - **One usage budget across all projects.** A machine-wide lock means only one pass or agy run happens at a time, whatever the number of projects. Every step checks `/usage` first: the loop pauses near your session limit and stops at your weekly threshold.
 - **The machine stays awake.** On macOS the runner runs under `caffeinate`, so a five-minute gap between passes stays five minutes.
@@ -63,6 +65,7 @@ To begin with an Antigravity run you've already written: `relay start --agy 01-s
 ```
 my-project/.loop/
   config.sh      repos, executors, checks, mode, limits, hazards
+  agy-check.json mechanical rules for Antigravity output (created when a repo uses agy)
   BACKLOG.md     the work list; the source of truth
   project.md     project conventions every pass enforces
   agy/           Antigravity prompts written by passes

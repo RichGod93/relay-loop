@@ -17,6 +17,7 @@ cat >"$T/stubs/claude" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in *"/usage"*) printf 'Current session: 10%% used\nCurrent week (all models): 20%% used\n'; exit 0 ;; esac
 n=$(( $(cat "$STUB_STATE/count" 2>/dev/null || echo 0) + 1 )); echo $n >"$STUB_STATE/count"
+printf '%s' "$2" >"$STUB_STATE/prompt-$n.txt"
 v() { printf '{"type":"result","structured_output":{"verdict":"%s","agy_prompt":"%s","commit_message":"%s","report":"stub pass %s"}}\n' "$1" "$2" "$3" "$n"; }
 case "${STUB_SCENARIO}:$n" in
   happy:1) echo a >api/a.txt; git -C api add a.txt; v AGY ui.md "Add a" ;;
@@ -61,6 +62,7 @@ check "detects both repos" 'grep -q "\"api|api|" "$P/.loop/config.sh" && grep -q
 check "flags remote Mongo without printing it" 'grep -q "MONGO_URI is a remote MongoDB" "$P/.loop/config.sh" && ! grep -q "user:pw" "$P/.loop/config.sh"'
 check "flags scheduled jobs" 'grep -q "scheduled job" "$P/.loop/config.sh"'
 check "turns a --fix lint into a read-only check" 'grep -q "\"api|api|claude|npx eslint .*src/\*\*/\*.ts.* && npm run test\"" "$P/.loop/config.sh" && ! grep "api|api" "$P/.loop/config.sh" | grep -q -- "--fix"'
+check "writes starter agy-check rules for the agy repo" 'python3 -m json.tool "$P/.loop/agy-check.json" >/dev/null'
 check "denies dev server" 'grep -q "Bash(npm run dev:\*)" "$P/.loop/config.sh"'
 check "refuses to start before hazards reviewed" '! "$ENGINE/bin/relay" start "$P" 2>/dev/null'
 
@@ -69,6 +71,8 @@ configure "$P"
 export STUB_STATE="$T/s1" STUB_SCENARIO=happy LOOP_BACKLOG="$P/.loop/BACKLOG.md"; mkdir -p "$STUB_STATE"
 "$ENGINE/lib/runner.sh" "$P" >/dev/null 2>&1
 L="$P/.loop/logs/loop.log"; W="$RELAY_HOME/work/proj"; B="$(cat "$P/.loop/state/branch")"
+check "prompt has the agy batch rules + quoted check command" 'grep -q "## Antigravity batches" "$T/s1/prompt-1.txt" && grep -q "agy-check.py'"'"' --repo '"'"'web'"'"'" "$T/s1/prompt-1.txt"'
+check "prompt routes repos to the right executor" 'grep -q "\`api\` (api): \*\*you write the code yourself" "$T/s1/prompt-1.txt" && grep -q "\`web\` (web): \*\*UI is written by Antigravity" "$T/s1/prompt-1.txt"'
 check "pass 1 asked for agy" 'grep -q "pass 1 verdict: AGY ui.md" "$L"'
 check "agy ran in the web worktree" 'grep -q "agy (.*) in $W/web" "$L" && [ -f "$W/web/ui.txt" ]'
 check "agy settings scoped to web worktree + its checks" 'grep -q "write_file($W/web)" "$P/.loop/state/agy-settings.json" && grep -q "command(npm run lint)" "$P/.loop/state/agy-settings.json" && python3 -m json.tool "$P/.loop/state/agy-settings.json" >/dev/null'
@@ -80,6 +84,21 @@ check "lock released" '[ ! -d "$RELAY_HOME/lock" ]'
 fin="$("$ENGINE/bin/relay" finish "$P")"
 check "finish lists the commit" 'echo "$fin" | grep -q "Add a"'
 check "finish --remove drops worktrees" '"$ENGINE/bin/relay" finish "$P" --remove >/dev/null && [ ! -e "$W/api" ]'
+
+echo "agy-check catches planted mistakes"
+C="$T/chk"; mkdir -p "$C/src/a" "$C/src/b"; git -C "$C" init -q
+printf "const x = v ?? '—';\n<Field><Input value={n} /></Field>\n" >"$C/src/a/p.tsx"; echo ok >"$C/src/b/o.tsx"
+git -C "$C" add -A; git -C "$C" -c user.email=t@t -c user.name=t commit -qm init
+printf "const x = v ?? '-';\n<Field><Input\n  id=\"n\" value={n} /></Field>\n<button role=\"button\">x</button>\nconsole.log(1)\n" >"$C/src/a/p.tsx"; echo changed >"$C/src/b/o.tsx"
+cat >"$T/rules.json" <<'R'
+{"extensions":[".tsx"],"keep_count":[{"text":"—","why":"em dash"}],
+ "banned_added":[{"pattern":"role=\"button\"","why":"redundant role"},{"pattern":"console\\.log\\(","why":"log"}],
+ "banned_in_tags":[{"tags":["Input"],"attr":"id","why":"breaks Field label"}],
+ "line_needs_prev":[{"line":"<button","prev":"eslint-disable-next-line","why":"raw button"}]}
+R
+chk="$(python3 "$ENGINE/lib/agy-check.py" --repo "$C" --rules "$T/rules.json" src/a)"; chk_rc=$?
+check "agy-check exits 1 on failures" '[ "$chk_rc" = 1 ]'
+check "agy-check: em dash, role, multi-line id, raw button, log, out of scope" '[ "$(echo "$chk" | grep -c "^FAIL")" = 6 ]'
 
 echo "agy no-op stops the loop"
 P2="$T/proj2"; make_project "$P2"; "$ENGINE/bin/relay" init "$P2" >/dev/null; configure "$P2"

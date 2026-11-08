@@ -37,6 +37,7 @@ PY
   sed "s#__NAME__#$(basename "$dir")#g" "$ENGINE_DIR/templates/BACKLOG.md" >"$dir/.loop/BACKLOG.md"
   cp "$ENGINE_DIR/templates/project.md" "$dir/.loop/project.md"
   printf 'logs/\nstate/\n' >"$dir/.loop/.gitignore"
+  grep -q '|agy|' "$dir/.loop/config.sh" && cp "$ENGINE_DIR/templates/agy-check.json" "$dir/.loop/agy-check.json"
   register "$dir"
   echo "Created $dir/.loop/"
   echo

@@ -78,7 +78,7 @@ check_usage() {   # 0 = ok to run, 1 = stop
 
 # ─── prompt assembly ────────────────────────────────────────────────────────
 build_pass_prompt() {
-  local i name path exe checks
+  local i name path exe checks agy_path=""
   {
     sed -e "s#__LOOP_DIR__#$LOOP_DIR#g" -e "s#__WORK__#$WORK#g" -e "s#__MODE__#$MODE#g" "$ENGINE_DIR/templates/pass-prompt.md"
     echo; echo "## Repos in this workspace (cwd = \`$WORK\`)"
@@ -90,6 +90,13 @@ build_pass_prompt() {
         echo "- \`$path\` ($name): **you write the code yourself.** Checks: \`$checks\`"
       fi
     done
+    if [ "$(count_agy)" -gt 0 ]; then
+      for i in $(repo_indexes); do [ "$(repo_field "$i" 3)" = agy ] && agy_path="$(repo_field "$i" 2)"; done
+      echo; echo "## Antigravity batches"
+      echo "- **Size:** one agy prompt covers at most $AGY_MAX_FILES files. Split bigger work into parts, each with its own prompt and its own review. Keep prompts short: scope table, rules, \"Done when\"."
+      echo "- **Mechanical check first (mandatory):** before reviewing a batch, run \`python3 '$ENGINE_DIR/lib/agy-check.py' --repo '$agy_path' --rules '$LOOP_DIR/agy-check.json' <scope folders inside $agy_path>\` from the workspace. Fix every \`FAIL\` (or send a new agy prompt if there are many), re-run until it exits 0, and read every \`warn\` line against the real API. Never stage a batch while it exits 1. Put its summary line in your backlog note."
+      echo "- **Teach it:** when you catch a mistake Antigravity has now made twice, add a rule for it to \`$LOOP_DIR/agy-check.json\` (format in the header of \`$ENGINE_DIR/lib/agy-check.py\`)."
+    fi
     echo; echo "## Declared hazards (from .loop/config.sh; obey them)"; echo "$HAZARDS"
     if [ -f "$LOOP_DIR/project.md" ]; then echo; echo "## Project rules"; cat "$LOOP_DIR/project.md"; fi
   }

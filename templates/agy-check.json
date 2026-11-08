@@ -1,0 +1,14 @@
+{
+  "allowed_outside": [],
+  "extensions": [".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte", ".css"],
+  "keep_count": [],
+  "banned_added": [
+    {"pattern": "^(<<<<<<<|>>>>>>>) ", "why": "merge conflict markers"},
+    {"pattern": "\\bdebugger;", "why": "leftover debugger statement"},
+    {"pattern": "console\\.log\\(", "why": "leftover console.log"}
+  ],
+  "banned_anywhere": [],
+  "banned_in_tags": [],
+  "line_needs_prev": [],
+  "warn_changed": ["fetch\\(", "axios", "use[A-Z]\\w*(Query|Mutation)\\(", "router\\.(push|replace)", "href=\\{?[`'\"]/"]
+}

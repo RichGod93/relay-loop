@@ -13,7 +13,7 @@ load_config() {   # $1 = project dir
   PROJECT_NAME="$(basename "$1")"; REPOS=(); MODE=branch
   MAX_PASSES=12; WEEK_STOP=80; SESSION_STOP=85; GAP_SECONDS=300; CLAUDE_EFFORT=medium
   AGY_MODEL=gemini-4-argon-high; AGY_TIMEOUT=45m; HAZARDS=""; HAZARDS_REVIEWED=no
-  EXTRA_DENY=(); AGY_EXTRA_ALLOW=(); WORKTREE_LINK=(node_modules); NOTIFY_CMD=""
+  EXTRA_DENY=(); AGY_EXTRA_ALLOW=(); WORKTREE_LINK=(node_modules); NOTIFY_CMD=""; AGY_MAX_FILES=10
   # shellcheck source=/dev/null
   . "$cfg"
   [ "${#REPOS[@]}" -gt 0 ] || die "REPOS is empty in $cfg"
