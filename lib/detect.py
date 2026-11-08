@@ -53,7 +53,13 @@ def node_info(path):
     elif os.path.exists(os.path.join(path, "tsconfig.json")):
         checks.append("npx tsc --noEmit")
     if "lint" in scripts:
-        checks.append(run("lint"))
+        lint = scripts["lint"]
+        if re.search(r"--fix\b|--write\b", lint):
+            # A check must not rewrite files. Run the same tool read-only instead of the script.
+            ro = re.sub(r"\s--fix\b", "", lint).replace("--write", "--check").strip()
+            checks.append(ro if ro.startswith(("npx ", "pnpm ", "yarn ")) else f"npx {ro}")
+        else:
+            checks.append(run("lint"))
     if "test" in scripts and "no test specified" not in scripts["test"]:
         checks.append(run("test"))
     if "build" in scripts and deps & FRONTEND_DEPS:

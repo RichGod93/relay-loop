@@ -40,6 +40,7 @@ make_project() {   # $1 = dir
     echo "# $r" >"$p/$r/README.md"; git -C "$p/$r" add -A; git -C "$p/$r" commit -qm init
   done
   echo '{"dependencies":{"next":"16.0.0","react":"19.0.0"},"scripts":{"lint":"eslint","build":"next build","dev":"next dev"}}' >"$p/web/package.json"
+  echo '{"scripts":{"lint":"eslint \"src/**/*.ts\" --fix","test":"jest"}}' >"$p/api/package.json"
   echo 'MONGO_URI=mongodb+srv://user:pw@cluster0.example.net/db' >"$p/api/.env"
   echo '@Cron("* * * * *")' >"$p/api/jobs.ts"
   git -C "$p/web" add -A; git -C "$p/web" commit -qm pkg
@@ -59,6 +60,7 @@ check "config created" '[ -f "$P/.loop/config.sh" ]'
 check "detects both repos" 'grep -q "\"api|api|" "$P/.loop/config.sh" && grep -q "\"web|web|" "$P/.loop/config.sh"'
 check "flags remote Mongo without printing it" 'grep -q "MONGO_URI is a remote MongoDB" "$P/.loop/config.sh" && ! grep -q "user:pw" "$P/.loop/config.sh"'
 check "flags scheduled jobs" 'grep -q "scheduled job" "$P/.loop/config.sh"'
+check "turns a --fix lint into a read-only check" 'grep -q "\"api|api|claude|npx eslint .*src/\*\*/\*.ts.* && npm run test\"" "$P/.loop/config.sh" && ! grep "api|api" "$P/.loop/config.sh" | grep -q -- "--fix"'
 check "denies dev server" 'grep -q "Bash(npm run dev:\*)" "$P/.loop/config.sh"'
 check "refuses to start before hazards reviewed" '! "$ENGINE/bin/relay" start "$P" 2>/dev/null'
 
