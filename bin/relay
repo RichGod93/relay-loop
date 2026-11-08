@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# relay: run an unattended Claude Code (+ optional Antigravity) work loop on any project.
+#   relay init   [dir]            scaffold .loop/ (detects repos, checks, hazards)
+#   relay start  [dir] [--agy F]  start the loop in the background (--agy: begin with that agy prompt)
+#   relay stop   [dir]            stop after the current step
+#   relay status                  every registered project: running?, last log lines
+#   relay logs   [dir]            follow the project's loop.log
+#   relay finish [dir] [--remove] branch mode: show what the loop committed and how to merge it
+set -uo pipefail
+
+# Resolve symlinks (install.sh links bin/relay into ~/.local/bin)
+src="$0"
+while [ -L "$src" ]; do t="$(readlink "$src")"; case "$t" in /*) src="$t" ;; *) src="$(dirname "$src")/$t" ;; esac; done
+ENGINE_DIR="$(cd "$(dirname "$src")/.." && pwd)"
+RELAY_HOME="${RELAY_HOME:-$HOME/.relay-loop}"
+# shellcheck source=/dev/null
+. "$ENGINE_DIR/lib/common.sh"
+
+project_dir() { cd "${1:-.}" 2>/dev/null && pwd || die "no such directory: ${1:-.}"; }
+register() { mkdir -p "$RELAY_HOME"; touch "$RELAY_HOME/projects"; grep -qxF "$1" "$RELAY_HOME/projects" || echo "$1" >>"$RELAY_HOME/projects"; }
+running_pid() { local p; p="$(cat "$1/.loop/state/pid" 2>/dev/null || true)"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && echo "$p"; }
+
+cmd_init() {
+  local dir; dir="$(project_dir "${1:-.}")"
+  [ -e "$dir/.loop/config.sh" ] && die "$dir/.loop/config.sh already exists"
+  command -v python3 >/dev/null || die "python3 is required"
+  local json; json="$(python3 "$ENGINE_DIR/lib/detect.py" "$dir")" || die "detection failed"
+  mkdir -p "$dir/.loop/agy" "$dir/.loop/logs" "$dir/.loop/state"
+  python3 - "$json" "$ENGINE_DIR/templates/config.sh" "$dir/.loop/config.sh" "$(basename "$dir")" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1]); t = open(sys.argv[2]).read()
+repos = "\n".join(f'  "{r["name"]}|{r["path"]}|{r["executor"]}|{r["checks"]}"' for r in d["repos"]) or '  "app|.|claude|true"'
+hz = "\n".join(f"- {h}" for h in d["hazards"]) or "- (nothing detected; that doesn't mean there is nothing: add prod data, money and customer-facing risks yourself)"
+deny = " ".join(f'"{x}"' for x in d["deny"])
+open(sys.argv[3], "w").write(t.replace("__NAME__", sys.argv[4]).replace("__REPOS__", repos).replace("__HAZARDS__", hz).replace("__DENY__", deny))
+PY
+  sed "s#__NAME__#$(basename "$dir")#g" "$ENGINE_DIR/templates/BACKLOG.md" >"$dir/.loop/BACKLOG.md"
+  cp "$ENGINE_DIR/templates/project.md" "$dir/.loop/project.md"
+  printf 'logs/\nstate/\n' >"$dir/.loop/.gitignore"
+  register "$dir"
+  echo "Created $dir/.loop/"
+  echo
+  sed -n '/^REPOS=(/,/^)/p' "$dir/.loop/config.sh"
+  echo; echo "Detected hazards:"; sed -n '/^HAZARDS="/,/^"/p' "$dir/.loop/config.sh" | sed '1d;$d'
+  echo
+  echo "Next: edit .loop/config.sh (repos, checks, HAZARDS, then HAZARDS_REVIEWED=yes),"
+  echo "      write items in .loop/BACKLOG.md, then: relay start $dir"
+}
+
+cmd_start() {
+  local dir="" agy=""
+  while [ $# -gt 0 ]; do case "$1" in --agy) agy="${2:?--agy needs a file name}"; shift 2 ;; *) dir="$1"; shift ;; esac; done
+  dir="$(project_dir "${dir:-.}")"
+  load_config "$dir"
+  [ "$HAZARDS_REVIEWED" = yes ] || die "set HAZARDS_REVIEWED=yes in $dir/.loop/config.sh after reading HAZARDS"
+  command -v claude >/dev/null || die "claude CLI not found"
+  [ "$(count_agy)" -eq 0 ] || command -v agy >/dev/null || die "a repo uses executor=agy but agy isn't installed"
+  local p; p="$(running_pid "$dir")"; [ -n "$p" ] && die "already running (pid $p)"
+  rm -f "$dir/.loop/STOP"; register "$dir"
+  START_AGY="$agy" nohup "$ENGINE_DIR/lib/runner.sh" "$dir" >>"$dir/.loop/logs/runner.out" 2>&1 &
+  disown 2>/dev/null || true
+  echo "started $PROJECT_NAME (log: $dir/.loop/logs/loop.log)"
+}
+
+cmd_stop() { local dir; dir="$(project_dir "${1:-.}")"; touch "$dir/.loop/STOP"; echo "will stop after the current step (pid $(running_pid "$dir" || echo none))"; }
+
+cmd_status() {
+  [ -s "$RELAY_HOME/projects" ] || { echo "no projects registered"; return 0; }
+  local dir p
+  while IFS= read -r dir; do
+    [ -d "$dir/.loop" ] || continue
+    p="$(running_pid "$dir")"
+    printf '%s  %s\n' "$( [ -n "$p" ] && echo "RUNNING" || echo "stopped" )" "$dir"
+    [ -f "$dir/.loop/state/branch" ] && echo "   branch: $(cat "$dir/.loop/state/branch")"
+    tail -2 "$dir/.loop/logs/loop.log" 2>/dev/null | sed 's/^/   /'
+  done <"$RELAY_HOME/projects"
+  [ -d "$RELAY_HOME/lock" ] && echo "lock held by pid $(cat "$RELAY_HOME/lock/pid" 2>/dev/null)"
+  return 0
+}
+
+cmd_logs() { local dir; dir="$(project_dir "${1:-.}")"; tail -f "$dir/.loop/logs/loop.log"; }
+
+cmd_finish() {
+  local dir="" remove=""
+  while [ $# -gt 0 ]; do case "$1" in --remove) remove=1; shift ;; *) dir="$1"; shift ;; esac; done
+  dir="$(project_dir "${dir:-.}")"; load_config "$dir"
+  local branch; branch="$(cat "$dir/.loop/state/branch" 2>/dev/null || true)"
+  [ -n "$branch" ] || die "no loop branch recorded (stage mode, or never started)"
+  local i path base
+  for i in $(repo_indexes); do
+    path="$(repo_field "$i" 2)"; base="$(git -C "$dir/$path" rev-parse --abbrev-ref HEAD)"
+    echo "== $(repo_field "$i" 1): $branch vs $base"
+    git -C "$dir/$path" log --oneline "$base..$branch" 2>/dev/null | sed 's/^/   /'
+    echo "   review: git -C \"$dir/$path\" diff $base...$branch"
+    echo "   merge:  git -C \"$dir/$path\" merge --squash $branch   (then commit)"
+  done
+  if [ -n "$remove" ]; then
+    [ -z "$(running_pid "$dir")" ] || die "loop is running; stop it first"
+    for i in $(repo_indexes); do
+      git -C "$dir/$(repo_field "$i" 2)" worktree remove --force "$RELAY_HOME/work/$PROJECT_NAME/$(repo_field "$i" 2)" 2>/dev/null && echo "removed worktree $(repo_field "$i" 1)"
+    done
+    rm -f "$dir/.loop/state/branch"
+    echo "worktrees removed; branch $branch kept (delete with git branch -D after merging)"
+  fi
+}
+
+case "${1:-}" in
+  init) shift; cmd_init "$@" ;;
+  start) shift; cmd_start "$@" ;;
+  stop) shift; cmd_stop "$@" ;;
+  status) shift; cmd_status ;;
+  logs) shift; cmd_logs "$@" ;;
+  finish) shift; cmd_finish "$@" ;;
+  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
