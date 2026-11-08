@@ -1,5 +1,7 @@
 # relay-loop
 
+> **Status: experimental (v0.1).** Extracted from a loop that ran unattended on one real two-repo product. The engine's own test runs the full loop on stub binaries; branch mode hasn't run on a real project yet. Expect rough edges, and read [Limits](#limits) before pointing it at anything that matters.
+
 Run unattended work loops on your projects with [Claude Code](https://docs.claude.com/en/docs/claude-code) and, optionally, the Antigravity CLI (`agy`).
 
 Each **pass** is a fresh `claude -p` with a clean context. It reads a backlog file, does exactly one item, runs your checks, stages what passes, updates the backlog and returns a structured verdict. The next pass picks up from the backlog, not from the previous pass's memory. When a pass needs UI work, it writes a prompt for Antigravity and the runner launches it. The next Claude pass reviews what Antigravity produced.
